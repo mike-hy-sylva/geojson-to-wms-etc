@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GeoJSON → WFS Pipeline Demo</title>
+
+  <!-- MapLibre GL JS (WebGL renderer — required for 100k+ polygons) -->
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── Left Panel ──────────────────────────────────────────────────── -->
+  <aside id="sidebar">
+
+    <div class="panel-section">
+      <h1 class="title">GeoJSON → WFS</h1>
+      <p class="subtitle">OGC Vector Data Pipeline</p>
+    </div>
+
+    <!-- About -->
+    <div class="panel-section">
+      <h2 class="section-heading">About</h2>
+      <p class="body-text">
+        Demonstrates how a small GeoJSON file is exposed as a live
+        <strong>OGC API Features</strong> (WFS-compatible) service via
+        <a href="https://pygeoapi.io" target="_blank" rel="noopener">pygeoapi</a>,
+        then stress-tested with a synthetic H3 hexagon dataset to reveal
+        the real limits of vector data pipelines.
+      </p>
+    </div>
+
+    <!-- Source data -->
+    <div class="panel-section">
+      <h2 class="section-heading">Source Data</h2>
+      <table class="info-table">
+        <tr><td class="label">Features</td><td>3 heritage sites</td></tr>
+        <tr><td class="label">Geometry</td><td>Point</td></tr>
+        <tr><td class="label">Bounds</td><td>Africa / Spain</td></tr>
+        <tr><td class="label">Format</td><td>GeoJSON → WFS</td></tr>
+        <tr><td class="label">Server</td><td>pygeoapi (EU OSS)</td></tr>
+      </table>
+    </div>
+
+    <!-- Service endpoints -->
+    <div class="panel-section">
+      <h2 class="section-heading">Service Endpoints</h2>
+      <div class="endpoint-row">
+        <span class="endpoint-label">OGC API root</span>
+        <button class="copy-btn" data-copy-id="url-root" title="Copy URL">⎘</button>
+      </div>
+      <div class="endpoint-url" id="url-root">—</div>
+
+      <div class="endpoint-row" style="margin-top:8px">
+        <span class="endpoint-label">CIPA sites (items)</span>
+        <button class="copy-btn" data-copy-id="url-wfs" title="Copy URL">⎘</button>
+      </div>
+      <div class="endpoint-url" id="url-wfs">—</div>
+    </div>
+
+    <!-- Load benchmarks -->
+    <div class="panel-section">
+      <h2 class="section-heading">Load Benchmarks</h2>
+      <p class="body-text muted">Hardcoded from observed Cloud Run timings.</p>
+
+      <div class="bench-block">
+        <div class="bench-header">
+          <span class="bench-name">Simple (3 features)</span>
+          <span class="bench-time fast">~0.1 s</span>
+        </div>
+        <div class="bench-bar-wrap">
+          <div class="bench-bar" style="width:1%"></div>
+        </div>
+        <div class="bench-note-text">Near-instant at any scale</div>
+      </div>
+
+      <div class="bench-block">
+        <div class="bench-header">
+          <span class="bench-name">H3 Res 6 (~140k features)</span>
+          <span class="bench-time slow" id="bench-stress-time">~12 s</span>
+        </div>
+        <div class="bench-bar-wrap">
+          <div class="bench-bar stress" style="width:80%"></div>
+        </div>
+        <div class="bench-note-text">≈ 120× slower than simple fetch</div>
+      </div>
+
+      <div class="limit-warning">
+        ⚠ Res 7 (~1M cells) → exceeds browser memory limits
+      </div>
+    </div>
+
+    <!-- H3 Stress Test controls -->
+    <div class="panel-section">
+      <h2 class="section-heading">H3 Stress Test</h2>
+
+      <div class="button-group">
+        <button class="load-btn" id="btn-simple" onclick="loadCollection('cipa_sites')">
+          Load 3 Sites
+        </button>
+        <button class="load-btn stress-btn" id="btn-stress" onclick="loadCollection('h3_stress_test')">
+          Load ~140k H3 Polygons
+        </button>
+        <button class="clear-btn" onclick="clearLayers()">
+          Clear Map
+        </button>
+      </div>
+
+      <p class="body-text muted" style="margin-top:8px; font-size:11px">
+        H3 resolution 6 hexagons fill the bounding box of the source data.
+        Fetched as GeoJSON from the live WFS endpoint and rendered via WebGL.
+      </p>
+    </div>
+
+    <!-- Status -->
+    <div class="panel-section" id="status-section">
+      <h2 class="section-heading">Status</h2>
+      <div id="status-display">
+        <div class="status-row"><span class="status-label">State</span><span id="st-state" class="status-val idle">Idle</span></div>
+        <div class="status-row"><span class="status-label">Features</span><span id="st-count" class="status-val">—</span></div>
+        <div class="status-row"><span class="status-label">Fetch</span><span id="st-fetch" class="status-val">—</span></div>
+        <div class="status-row"><span class="status-label">Render</span><span id="st-render" class="status-val">—</span></div>
+        <div class="status-row"><span class="status-label">Total</span><span id="st-total" class="status-val">—</span></div>
+      </div>
+      <div id="status-error" class="error-box" style="display:none"></div>
+    </div>
+
+    <div class="panel-footer">
+      <a href="https://pygeoapi.io" target="_blank" rel="noopener">pygeoapi</a> ·
+      <a href="https://docs.ogc.org/is/17-069r4/17-069r4.html" target="_blank" rel="noopener">OGC API Features</a> ·
+      <a href="https://h3geo.org" target="_blank" rel="noopener">H3</a>
+    </div>
+
+  </aside>
+
+  <!-- ── Map ─────────────────────────────────────────────────────────── -->
+  <main id="map"></main>
+
+  <script src="app.js"></script>
+</body>
+</html>

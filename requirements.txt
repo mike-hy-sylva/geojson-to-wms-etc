@@ -1,0 +1,3 @@
+# Python dependencies for generate_stress_test.py
+h3>=3.7.6
+shapely>=2.0.0

@@ -1,0 +1,109 @@
+# pygeoapi configuration
+# OGC API Features server (WFS-compatible) for CIPA demo
+#
+# After deploying to Cloud Run, replace YOUR-CLOUD-RUN-URL with the actual URL,
+# then rebuild and redeploy the container.
+
+server:
+  bind:
+    host: 0.0.0.0
+    port: 5000
+  url: https://wfs-demo-176063489463.europe-west1.run.app
+  mimetype: application/json; charset=UTF-8
+  encoding: utf-8
+  language: en-US
+  cors: true
+  pretty_print: true
+  limit: 200000  # max features per GetFeature request (needed for stress test)
+
+logging:
+  level: ERROR
+  logfile: /tmp/pygeoapi.log
+
+metadata:
+  identification:
+    title: GeoJSON → WFS Pipeline Demo
+    description: >
+      CIPA Heritage Sites and H3 hexagon stress-test polygons served as
+      OGC API Features (WFS 2.0 compatible). Generated from a 3-point
+      GeoJSON source to demonstrate the limits of vector data pipelines.
+    keywords:
+      - WFS
+      - OGC API Features
+      - GeoJSON
+      - H3
+      - heritage
+      - stress-test
+    keywords_type: theme
+    terms_of_service: https://creativecommons.org/licenses/by/4.0/
+    url: https://github.com/YOUR_REPO
+  license:
+    name: Creative Commons Attribution 4.0 International
+    url: https://creativecommons.org/licenses/by/4.0/
+  provider:
+    name: Pipeline Demo
+    url: https://github.com/YOUR_REPO
+  contact:
+    name: Demo Contact
+    email: demo@example.com
+    phone: ''
+    fax: ''
+    hours: 24/7
+    instructions: Use GitHub Issues for questions.
+    role: pointOfContact
+
+resources:
+
+  cipa_sites:
+    type: collection
+    title: CIPA Heritage Sites (3 features)
+    description: >
+      3 vernacular architecture heritage sites across West Africa (Benin/Togo, Senegal)
+      and Europe (Spain). Source: CIPA Heritage Documentation Initiative.
+    keywords:
+      - heritage
+      - CIPA
+      - vernacular architecture
+      - UNESCO
+    links:
+      - type: text/html
+        rel: canonical
+        title: CIPA Heritage
+        href: https://github.com/YOUR_REPO
+        hreflang: en-US
+    extents:
+      spatial:
+        bbox: [-16.45, 10.35, -0.32, 39.31]
+        crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+      - type: feature
+        name: GeoJSON
+        data: /data/cipa_sites.geojson
+        id_field: ID
+        title_field: NAM
+
+  h3_stress_test:
+    type: collection
+    title: H3 Stress Test — Resolution 6 (~140k polygons)
+    description: >
+      H3 hexagon grid at resolution 6, filling the CIPA bounding box
+      [-16.45, 10.35, -0.32, 39.31]. Contains approximately 140,000 polygon features.
+      Intended to demonstrate WFS performance limits: fetching and rendering this
+      collection takes 10–15 seconds and approaches browser memory limits.
+      Resolution 7 (~1M cells) would likely crash browser tabs entirely.
+    keywords:
+      - H3
+      - hexagon
+      - stress-test
+      - performance
+      - limits
+    extents:
+      spatial:
+        bbox: [-16.45, 10.35, -0.32, 39.31]
+        crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+      - type: feature
+        name: GeoJSON
+        data: /data/h3_stress_test.geojson
+        id_field: h3_index
+        title_field: h3_index
