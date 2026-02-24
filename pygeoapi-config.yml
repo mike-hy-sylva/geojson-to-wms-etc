@@ -5,9 +5,6 @@
 # then rebuild and redeploy the container.
 
 server:
-  bind:
-    host: 0.0.0.0
-    port: 5000
   url: https://wfs-demo-176063489463.europe-west1.run.app
   mimetype: application/json; charset=UTF-8
   encoding: utf-8
@@ -36,16 +33,16 @@ metadata:
       - stress-test
     keywords_type: theme
     terms_of_service: https://creativecommons.org/licenses/by/4.0/
-    url: https://github.com/YOUR_REPO
+    url: https://github.com/mike-hy-sylva/geojson-to-wms-etc
   license:
     name: Creative Commons Attribution 4.0 International
     url: https://creativecommons.org/licenses/by/4.0/
   provider:
-    name: Pipeline Demo
-    url: https://github.com/YOUR_REPO
+    name: Sylva
+    url: https://github.com/mike-hy-sylva/geojson-to-wms-etc
   contact:
-    name: Demo Contact
-    email: demo@example.com
+    name: Michael
+    email: michael@sylva.earth
     phone: ''
     fax: ''
     hours: 24/7

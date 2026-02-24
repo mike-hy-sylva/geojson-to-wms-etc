@@ -74,21 +74,23 @@ def _wfs_capabilities_xml():
     for cid, col in COLLECTIONS.items():
         bb = col["bbox"]
         feature_types += f"""
-    <wfs:FeatureType>
-      <wfs:Name>{cid}</wfs:Name>
-      <wfs:Title>{col['title']}</wfs:Title>
-      <wfs:Abstract>{col['description']}</wfs:Abstract>
-      <wfs:DefaultCRS>urn:ogc:def:crs:EPSG::4326</wfs:DefaultCRS>
-      <wfs:OtherCRS>urn:ogc:def:crs:OGC:1.3:CRS84</wfs:OtherCRS>
-      <wfs:OutputFormats>
-        <wfs:Format>application/json</wfs:Format>
-        <wfs:Format>application/geo+json</wfs:Format>
-      </wfs:OutputFormats>
-      <ows:WGS84BoundingBox>
-        <ows:LowerCorner>{bb[0]} {bb[1]}</ows:LowerCorner>
-        <ows:UpperCorner>{bb[2]} {bb[3]}</ows:UpperCorner>
-      </ows:WGS84BoundingBox>
-    </wfs:FeatureType>"""
+    <FeatureType>
+      <Name>{cid}</Name>
+      <Title>{col['title']}</Title>
+      <Abstract>{col['description']}</Abstract>
+      <DefaultCRS>urn:ogc:def:crs:EPSG::4326</DefaultCRS>
+      <OtherCRS>urn:ogc:def:crs:OGC:1.3:CRS84</OtherCRS>
+      <OutputFormats>
+        <Format>application/json</Format>
+        <Format>application/geo+json</Format>
+      </OutputFormats>
+      <WGS84BoundingBox>
+        <westBoundLongitude>{bb[0]}</westBoundLongitude>
+        <southBoundLatitude>{bb[1]}</southBoundLatitude>
+        <eastBoundLongitude>{bb[2]}</eastBoundLongitude>
+        <northBoundLatitude>{bb[3]}</northBoundLatitude>
+      </WGS84BoundingBox>
+    </FeatureType>"""
 
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <wfs:WFS_Capabilities version="2.0.0"
@@ -124,13 +126,13 @@ def _wfs_capabilities_xml():
   <ows:OperationsMetadata>
     <ows:Operation name="GetCapabilities">
       <ows:DCP><ows:HTTP>
-        <ows:Get xlink:href="{BASE_URL}?"/>
-        <ows:Post xlink:href="{BASE_URL}?"/>
+        <ows:Get xlink:href="{BASE_URL}/wfs"/>
+        <ows:Post xlink:href="{BASE_URL}/wfs"/>
       </ows:HTTP></ows:DCP>
     </ows:Operation>
     <ows:Operation name="GetFeature">
       <ows:DCP><ows:HTTP>
-        <ows:Get xlink:href="{BASE_URL}?"/>
+        <ows:Get xlink:href="{BASE_URL}/wfs"/>
       </ows:HTTP></ows:DCP>
       <ows:Parameter name="outputFormat">
         <ows:AllowedValues>
@@ -142,13 +144,13 @@ def _wfs_capabilities_xml():
     </ows:Operation>
     <ows:Operation name="DescribeFeatureType">
       <ows:DCP><ows:HTTP>
-        <ows:Get xlink:href="{BASE_URL}?"/>
+        <ows:Get xlink:href="{BASE_URL}/wfs"/>
       </ows:HTTP></ows:DCP>
     </ows:Operation>
   </ows:OperationsMetadata>
 
-  <wfs:FeatureTypeList>{feature_types}
-  </wfs:FeatureTypeList>
+  <FeatureTypeList>{feature_types}
+  </FeatureTypeList>
 
 </wfs:WFS_Capabilities>"""
 
@@ -179,27 +181,29 @@ def _get_features(collection_id, bbox_str=None, count=None, start_index=0):
 # ── Root / WFS dispatcher ─────────────────────────────────────────────────────
 @app.route("/", methods=["GET", "HEAD", "OPTIONS"])
 def root():
-    service = request.args.get("SERVICE", "").upper()
-    req = request.args.get("REQUEST", "").upper()
+    # Case-insensitive lookup — WFS spec treats param names as case-insensitive,
+    # and the WHH tool sends lowercase "service=wfs&request=GetCapabilities"
+    args_ci = {k.lower(): v for k, v in request.args.items()}
+    service = args_ci.get("service", "").upper()
+    req = args_ci.get("request", "").upper()
 
     if service == "WFS":
         if req == "GETCAPABILITIES":
             xml = _wfs_capabilities_xml()
-            return Response(xml, mimetype="application/xml; charset=UTF-8")
+            return Response(xml, mimetype="text/xml; charset=UTF-8")
 
         elif req == "GETFEATURE":
             type_names = (
-                request.args.get("TYPENAMES")
-                or request.args.get("TypeNames")
-                or request.args.get("typenames")
+                args_ci.get("typenames")
+                or args_ci.get("typename")  # WFS 1.x style
                 or ""
             )
             # strip namespace prefix if present (e.g. "ns:cipa_sites" → "cipa_sites")
             type_names = type_names.split(":")[-1].strip()
-            bbox_str = request.args.get("BBOX") or request.args.get("bbox")
-            count = request.args.get("COUNT") or request.args.get("count")
+            bbox_str = args_ci.get("bbox")
+            count = args_ci.get("count")
             count = int(count) if count else None
-            start = int(request.args.get("STARTINDEX", 0))
+            start = int(args_ci.get("startindex", 0))
 
             result = _get_features(type_names, bbox_str, count, start)
             if result is None:
@@ -239,6 +243,12 @@ def root():
              "type": "application/xml", "title": "WFS 2.0 GetCapabilities"},
         ],
     })
+
+
+# ── /wfs alias — many WFS clients try this well-known path ───────────────────
+@app.route("/wfs", methods=["GET", "HEAD", "OPTIONS"])
+def wfs_endpoint():
+    return root()
 
 
 # ── OGC API Features — conformance ───────────────────────────────────────────

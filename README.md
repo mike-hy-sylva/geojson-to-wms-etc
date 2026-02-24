@@ -1,8 +1,10 @@
-# GeoJSON → WFS Pipeline Demo
+# GeoJSON → OGC API Features Pipeline Demo
 
-Demonstrates how a small GeoJSON file is exposed as a live **OGC API Features** (WFS-compatible) service, then stress-tested with a synthetic H3 hexagon dataset to reveal the real limits of vector data pipelines.
+Demonstrates how a small GeoJSON file is exposed as a live **OGC API Features** service using [pygeoapi](https://pygeoapi.io), then stress-tested with a synthetic H3 hexagon dataset to reveal the real limits of vector data pipelines.
 
 **Stack:** Python · [pygeoapi](https://pygeoapi.io) · Docker · Google Cloud Run · MapLibre GL JS · GitHub Pages
+
+**Live service:** https://wfs-demo-176063489463.europe-west1.run.app
 
 ---
 
@@ -10,11 +12,11 @@ Demonstrates how a small GeoJSON file is exposed as a live **OGC API Features** 
 
 | Protocol | Returns | Requires |
 |---|---|---|
-| **WFS / OGC API Features** | Vector data (GeoJSON/GML) | Server |
+| **OGC API Features / WFS** | Vector data (GeoJSON) | Server |
 | **WMS** | Rendered PNG images | Server + image renderer |
 | **WMTS** | Pre-rendered PNG tile grid | Server (or static tiles) |
 
-For a 3-point GeoJSON, **WFS is the right tool**: it returns the raw vector features that clients can style, filter, and query. WMTS/WMS add server-side raster rendering complexity with no benefit for small vector datasets.
+For a 3-point GeoJSON, **OGC API Features is the right tool**: it returns raw vector features that clients can style, filter, and query. WMTS/WMS add server-side raster rendering complexity with no benefit for small vector datasets.
 
 ---
 
@@ -23,9 +25,12 @@ For a 3-point GeoJSON, **WFS is the right tool**: it returns the raw vector feat
 ```
 geojson-to-wms-etc/
 ├── CIPA TRIAL00.geojson       ← source data (3 heritage sites)
+├── cipa_sites.geojson         ← cleaned copy (baked into container)
+├── h3_stress_test.geojson     ← generated H3 stress-test data (baked into container)
 ├── generate_stress_test.py    ← H3 polygon generator
-├── requirements.txt           ← Python deps for generator
-├── pygeoapi-config.yml        ← pygeoapi server config
+├── requirements.txt           ← Python deps for generator (h3, shapely)
+├── pygeoapi-config.yml        ← pygeoapi server configuration
+├── wfs_server.py              ← legacy Flask reference (not deployed)
 ├── Dockerfile                 ← container for Cloud Run
 ├── cors.json                  ← GCS CORS policy
 └── docs/                      ← GitHub Pages frontend
@@ -45,8 +50,8 @@ python generate_stress_test.py
 
 Expected output:
 ```
-H3 Resolution 6: 142,381 polygons generated in 4,210 ms
-File size: 43.2 MB → h3_stress_test.geojson
+H3 Resolution 6: 144,462 polygons generated
+File size: 55.9 MB → h3_stress_test.geojson
 ```
 
 To test different resolutions:
@@ -62,14 +67,16 @@ python generate_stress_test.py --res 7   # ~1M cells  (crashes browsers)
 
 ```bash
 docker build -t wfs-demo .
-docker run -p 5000:5000 wfs-demo
+docker run -p 80:80 wfs-demo
 ```
 
 Verify endpoints:
-- Collections list: http://localhost:5000/collections
-- Heritage sites: http://localhost:5000/collections/cipa_sites/items
-- H3 stress test: http://localhost:5000/collections/h3_stress_test/items?limit=100
-- WFS 2.0 XML: http://localhost:5000/wfs?SERVICE=WFS&REQUEST=GetCapabilities
+- Landing page: http://localhost/
+- Collections list: http://localhost/collections
+- Heritage sites: http://localhost/collections/cipa_sites/items
+- H3 stress test: http://localhost/collections/h3_stress_test/items?limit=100
+- Conformance: http://localhost/conformance
+- OpenAPI spec: http://localhost/openapi
 
 ---
 
@@ -77,23 +84,19 @@ Verify endpoints:
 
 ```bash
 # Build and push to Container Registry
-gcloud builds submit --tag gcr.io/general-tasks-454208/wfs-demo
+gcloud builds submit --tag gcr.io/<PROJECT_ID>/wfs-demo
 
 # Deploy (europe-west1 recommended for EU data)
 gcloud run deploy wfs-demo \
-  --image gcr.io/general-tasks-454208/wfs-demo \
+  --image gcr.io/<PROJECT_ID>/wfs-demo \
   --platform managed \
   --region europe-west1 \
   --allow-unauthenticated \
-  --memory 512Mi
+  --memory 2Gi \
+  --port 80
 ```
 
-After deploy, you'll receive a URL like `https://wfs-demo-176063489463.europe-west1.run.app`.
-
-**Update the config with your URL:**
-1. Edit `pygeoapi-config.yml` → replace `YOUR-CLOUD-RUN-URL`
-2. Edit `docs/app.js` → replace `YOUR-CLOUD-RUN-URL`
-3. Rebuild and redeploy: `gcloud builds submit ... && gcloud run deploy ...`
+After deploy, update `server.url` in `pygeoapi-config.yml` with your Cloud Run URL, then rebuild and redeploy.
 
 ---
 
@@ -105,37 +108,35 @@ After deploy, you'll receive a URL like `https://wfs-demo-176063489463.europe-we
 
 ---
 
-## Using the WFS URL in external GIS tools
+## Using the service in GIS tools
 
-Paste either of these into the "External services" panel of any OGC-compatible tool (QGIS, ArcGIS Online, etc.):
+### QGIS (recommended)
+1. Layer → Add Layer → Add WFS Layer
+2. New connection → URL: `https://wfs-demo-176063489463.europe-west1.run.app`
+3. Set version/protocol to **OGC API - Features**
+4. Connect → both collections appear → Add to map
 
+### Any OGC API Features client
 ```
-# OGC API Features root (modern WFS)
-https://wfs-demo-176063489463.europe-west1.run.app/
-
-# Traditional WFS 2.0 GetCapabilities
-https://wfs-demo-176063489463.europe-west1.run.app/wfs?SERVICE=WFS&REQUEST=GetCapabilities
+https://wfs-demo-176063489463.europe-west1.run.app/collections/cipa_sites/items
+https://wfs-demo-176063489463.europe-west1.run.app/collections/h3_stress_test/items
 ```
-
-Select layers:
-- `cipa_sites` — 3 heritage site points
-- `h3_stress_test` — ~140k H3 hexagon polygons
 
 ---
 
 ## Pipeline limits demonstrated
 
-| Dataset | Features | Load time | Notes |
-|---|---|---|---|
-| CIPA sites | 3 | ~0.1 s | Instant at any scale |
-| H3 Res 5 | ~20k | ~2 s | Noticeable but fast |
-| H3 Res 6 | ~140k | ~10–15 s | Real-world stress |
-| H3 Res 7 | ~1M | Crashes | Hard browser limit |
+| Dataset | Features | Notes |
+|---|---|---|
+| CIPA sites | 3 | Instant at any scale |
+| H3 Res 5 | ~20k | Noticeable but fast |
+| H3 Res 6 | ~140k | Real-world stress (~10–15 s) |
+| H3 Res 7 | ~1M | Crashes browser tabs |
 
-This is why tiled services (WMTS/MVT) exist: they avoid sending all features to the client at once. For large datasets, vector tiles (`/{z}/{x}/{y}.pbf`) are the production-grade solution.
+This is why tiled services (WMTS/MVT) exist: they avoid sending all features to the client at once.
 
 ---
 
 ## About pygeoapi
 
-[pygeoapi](https://pygeoapi.io) is an OSGeo-incubated Python server implementing OGC API standards. It is developed with significant contributions from European institutions (Norwegian Met, Dutch Kadaster, EURAC Research) and is the recommended modern alternative to GeoServer/MapServer for OGC API Features deployments.
+[pygeoapi](https://pygeoapi.io) is an OSGeo-incubated Python server implementing OGC API standards. It is the reference implementation of **OGC API - Features** (OGC 17-069r4), which is the current standard replacing WFS 2.0. Developed with contributions from European institutions (Norwegian Met, Dutch Kadaster, EURAC Research) and used across EU INSPIRE-compliant deployments.
