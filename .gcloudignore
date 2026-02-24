@@ -1,0 +1,13 @@
+# Files to exclude from Cloud Build uploads.
+# Data files are intentionally NOT excluded here even though
+# they are in .gitignore — they must be present in the build context.
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Plans / Claude artifacts
+.claude/
