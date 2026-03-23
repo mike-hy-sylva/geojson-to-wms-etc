@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Copernicus Marine — Live Explorer</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root { --bg:#0b0f1a; --panel:#131826; --border:#1e2437; --text:#dde1f0; --muted:#6b7494; --accent:#3b82f6; --green:#22c55e; --red:#ef4444; --yellow:#f59e0b; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; font-size:13px; display:grid; grid-template-columns:320px 1fr; height:100vh; overflow:hidden; }
+
+    /* ── Sidebar ── */
+    #sidebar { background:var(--panel); border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+    .section { padding:14px; border-bottom:1px solid var(--border); }
+    .section h2 { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:10px; }
+    label { display:block; font-size:11px; color:var(--muted); margin-bottom:4px; }
+    select, input[type=datetime-local] {
+      width:100%; padding:6px 8px; background:#0b0f1a; border:1px solid var(--border);
+      border-radius:5px; color:var(--text); font-size:12px;
+    }
+    select:focus, input:focus { outline:none; border-color:var(--accent); }
+    .row2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+
+    /* ── Metadata card ── */
+    .meta-grid { display:grid; grid-template-columns:auto 1fr; gap:4px 10px; font-size:11px; }
+    .mk { color:var(--muted); }
+    .mv { font-family:monospace; }
+    .mv.float { color:#a78bfa; }
+    .mv.rgb { color:#f59e0b; }
+    .mv.up { color:var(--green); }
+    .mv.down { color:var(--red); }
+
+    /* ── Value panel ── */
+    #value-panel { flex:1; overflow-y:auto; padding:14px; }
+    #value-panel h2 { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:10px; }
+    .val-box { background:#0b0f1a; border:1px solid var(--border); border-radius:6px; padding:12px; margin-bottom:8px; }
+    .val-main { font-size:28px; font-weight:700; font-family:monospace; color:#a78bfa; }
+    .val-unit { font-size:12px; color:var(--muted); margin-left:4px; }
+    .val-label { font-size:11px; color:var(--muted); margin-top:2px; }
+    .rgba-row { display:flex; gap:6px; margin-top:8px; }
+    .rgba-chip { flex:1; padding:4px; border-radius:4px; text-align:center; font-family:monospace; font-size:11px; font-weight:600; }
+    .ts-table { width:100%; border-collapse:collapse; font-size:11px; margin-top:4px; }
+    .ts-table th { color:var(--muted); text-align:left; padding:3px 6px; border-bottom:1px solid var(--border); }
+    .ts-table td { padding:3px 6px; font-family:monospace; }
+    .ts-table tr:hover td { background:#1e2437; }
+    .ts-table td.v { color:#a78bfa; }
+    .placeholder { color:var(--muted); font-size:12px; text-align:center; padding:24px 0; }
+    #fetch-ts-btn {
+      width:100%; padding:8px; background:var(--accent); color:#fff;
+      border:none; border-radius:6px; cursor:pointer; font-size:12px; margin-top:8px;
+    }
+    #fetch-ts-btn:disabled { background:#1e2437; color:var(--muted); cursor:default; }
+
+    /* ── Map ── */
+    #map-wrap { position:relative; }
+    #map { width:100%; height:100%; }
+    .leaflet-container { background:#0b0f1a; }
+
+    /* ── Map overlay ── */
+    #crosshair {
+      position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+      pointer-events:none; z-index:500; opacity:.5;
+      width:20px; height:20px;
+    }
+    #crosshair::before, #crosshair::after {
+      content:''; position:absolute; background:#fff;
+    }
+    #crosshair::before { left:50%; top:0; width:1px; height:100%; transform:translateX(-50%); }
+    #crosshair::after  { top:50%; left:0; height:1px; width:100%; transform:translateY(-50%); }
+    #coords-bar {
+      position:absolute; bottom:30px; left:50%; transform:translateX(-50%);
+      z-index:1000; background:rgba(11,15,26,.85); backdrop-filter:blur(6px);
+      padding:5px 14px; border-radius:20px; font-size:11px; color:var(--muted);
+      font-family:monospace; border:1px solid var(--border); pointer-events:none;
+    }
+    #legend-bar {
+      position:absolute; bottom:30px; right:10px; z-index:1000;
+      background:rgba(11,15,26,.9); backdrop-filter:blur(4px);
+      border:1px solid var(--border); border-radius:6px; overflow:hidden;
+    }
+    #legend-bar img { display:block; max-height:160px; }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <!-- Layer + time controls -->
+  <div class="section">
+    <h2>Layer</h2>
+    <select id="layer-sel" onchange="switchLayer()">
+      <option value="thetao">Sea Surface Temperature (thetao)</option>
+      <option value="so">Sea Surface Salinity (so)</option>
+      <option value="uo">Eastward Velocity (uo)</option>
+      <option value="vo">Northward Velocity (vo)</option>
+      <option value="zos">Sea Surface Height (zos)</option>
+      <option value="sea_water_velocity">Sea Water Speed (sea_water_velocity)</option>
+    </select>
+  </div>
+  <div class="section">
+    <h2>Time</h2>
+    <input type="datetime-local" id="time-input" step="3600" onchange="switchLayer()" />
+    <p style="font-size:10px;color:var(--muted);margin-top:5px;">Range: 2022-06-01 → 2026-04-01 · Hourly</p>
+  </div>
+  <!-- Service metadata -->
+  <div class="section">
+    <h2>Service Info</h2>
+    <div class="meta-grid" id="meta-grid">
+      <span class="mk">Dataset</span><span class="mv">GLOBAL_ANALYSISFORECAST_PHY_001_024</span>
+      <span class="mk">Provider</span><span class="mv">Copernicus Marine</span>
+      <span class="mk">Resolution</span><span class="mv">0.083° (~9 km)</span>
+      <span class="mk">Tile format</span><span class="mv rgb">image/png · RGB 0–255</span>
+      <span class="mk">Value type</span><span class="mv float">float32 (GetFeatureInfo)</span>
+      <span class="mk">Depth</span><span class="mv">-0.494 m (surface)</span>
+    </div>
+  </div>
+  <!-- Value inspector -->
+  <div id="value-panel">
+    <h2>Click map → inspect values</h2>
+    <div id="result-area"><p class="placeholder">Click anywhere on the ocean to query the value at that point.</p></div>
+    <button id="fetch-ts-btn" disabled onclick="fetchTimeSeries()">Fetch 24-hr time series at this point</button>
+  </div>
+</div>
+
+<div id="map-wrap">
+  <div id="crosshair"></div>
+  <div id="map"></div>
+  <div id="coords-bar">hover over map</div>
+  <div id="legend-bar"><img id="legend-img" src="" alt="legend" /></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const BASE = 'https://wmts.marine.copernicus.eu/teroWmts';
+const DATASET = 'GLOBAL_ANALYSISFORECAST_PHY_001_024/cmems_mod_glo_phy_anfc_0.083deg_PT1H-m_202406';
+const ELEVATION = '-0.49402499198913574';
+
+const LAYERS = {
+  thetao:           { label:'Sea Surface Temperature', unit:'°C',         min:-1.81,  max:30.62,  style:'cmap:thermal' },
+  so:               { label:'Sea Surface Salinity',    unit:'PSU ×10⁻³',  min:29.08,  max:37.00,  style:'cmap:haline' },
+  uo:               { label:'Eastward Velocity',       unit:'m/s',        min:-1.56,  max:1.56,   style:'cmap:balance' },
+  vo:               { label:'Northward Velocity',      unit:'m/s',        min:-1.56,  max:1.56,   style:'cmap:balance' },
+  zos:              { label:'Sea Surface Height',      unit:'m',          min:-1.83,  max:0.83,   style:'cmap:viridis' },
+  sea_water_velocity:{ label:'Sea Water Speed',        unit:'m/s',        min:0,      max:2.21,   style:'cmap:speed,vectorStyle:solid' },
+};
+
+// ── Time default (today at current UTC hour) ──────────────────────────────────
+const now = new Date();
+now.setMinutes(0,0,0);
+const pad = n => String(n).padStart(2,'0');
+const isoLocal = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:00`;
+document.getElementById('time-input').value = isoLocal;
+
+// ── Map setup ─────────────────────────────────────────────────────────────────
+const map = L.map('map', { zoomControl:false }).setView([20, 0], 3);
+L.control.zoom({ position:'bottomleft' }).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+  attribution:'© OpenStreetMap © Carto', maxZoom:18, opacity:.6
+}).addTo(map);
+
+let wmtsLayer = null;
+let lastLatLng = null;
+
+// ── WMTS tile URL builder ─────────────────────────────────────────────────────
+function tileUrl(layerId) {
+  const meta = LAYERS[layerId];
+  const time = document.getElementById('time-input').value + ':00.000Z';
+  const p = new URLSearchParams({
+    SERVICE:'WMTS', REQUEST:'GetTile', VERSION:'1.0.0',
+    LAYER: `${DATASET}/${layerId}`,
+    STYLE: meta.style,
+    TILEMATRIXSET:'EPSG:3857',
+    FORMAT:'image/png',
+    TIME: time,
+    ELEVATION,
+  });
+  return BASE + '?' + p.toString() + '&TILEMATRIX=EPSG:3857:{z}&TILEROW={y}&TILECOL={x}';
+}
+
+// ── Switch layer ──────────────────────────────────────────────────────────────
+function switchLayer() {
+  const layerId = document.getElementById('layer-sel').value;
+  if (wmtsLayer) map.removeLayer(wmtsLayer);
+  wmtsLayer = L.tileLayer(tileUrl(layerId), {
+    opacity: 0.85, maxZoom: 10, tileSize: 256,
+    attribution: 'Copernicus Marine Service'
+  }).addTo(map);
+  updateLegend(layerId);
+  if (lastLatLng) queryPoint(lastLatLng);
+}
+
+// ── Legend ────────────────────────────────────────────────────────────────────
+function updateLegend(layerId) {
+  const meta = LAYERS[layerId];
+  const p = new URLSearchParams({
+    SERVICE:'WMTS', REQUEST:'GetLegend',
+    LAYER: `${DATASET}/${layerId}`,
+    STYLE: meta.style,
+    FORMAT:'image/svg+xml',
+  });
+  document.getElementById('legend-img').src = BASE + '?' + p.toString();
+}
+
+// ── Tile coords from latlng ───────────────────────────────────────────────────
+function latLngToTileInfo(lat, lng, zoom) {
+  const z = Math.floor(zoom);
+  const n = Math.pow(2, z);
+  const col = Math.floor((lng + 180) / 360 * n);
+  const latR = lat * Math.PI / 180;
+  const rowF = (1 - Math.log(Math.tan(latR) + 1/Math.cos(latR)) / Math.PI) / 2 * n;
+  const row = Math.floor(rowF);
+  const I = Math.min(255, Math.floor((rowF - row) * 256));
+  const colF = (lng + 180) / 360 * n;
+  const J = Math.min(255, Math.floor((colF - col) * 256));
+  return { z, row, col, I, J };
+}
+
+// ── GetFeatureInfo ─────────────────────────────────────────────────────────────
+async function queryPoint(latlng) {
+  lastLatLng = latlng;
+  const layerId = document.getElementById('layer-sel').value;
+  const meta = LAYERS[layerId];
+  const time = document.getElementById('time-input').value + ':00.000Z';
+  const zoom = Math.min(10, Math.floor(map.getZoom()));
+  const { z, row, col, I, J } = latLngToTileInfo(latlng.lat, latlng.lng, zoom);
+
+  document.getElementById('result-area').innerHTML = `<p class="placeholder">Querying ${meta.label}…</p>`;
+  document.getElementById('fetch-ts-btn').disabled = true;
+
+  // ── GetFeatureInfo (actual float value) ──
+  const p = new URLSearchParams({
+    SERVICE:'WMTS', REQUEST:'GetFeatureInfo', VERSION:'1.0.0',
+    LAYER:`${DATASET}/${layerId}`,
+    STYLE: meta.style,
+    FORMAT:'image/png',
+    INFOFORMAT:'application/json',
+    TILEMATRIXSET:'EPSG:3857',
+    TILEMATRIX:`EPSG:3857:${z}`,
+    TILEROW: row, TILECOL: col,
+    I, J,
+    TIME: time,
+    ELEVATION,
+  });
+
+  // ── Also fetch the tile and sample its pixel RGBA ──
+  const tileUrlStr = `${BASE}?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${encodeURIComponent(DATASET+'/'+layerId)}&STYLE=${encodeURIComponent(meta.style)}&TILEMATRIXSET=EPSG:3857&TILEMATRIX=EPSG:3857:${z}&TILEROW=${row}&TILECOL=${col}&FORMAT=image/png&TIME=${encodeURIComponent(time)}&ELEVATION=${ELEVATION}`;
+
+  let fiData = null, rgba = null;
+
+  try {
+    const [fiResp, pixelRgba] = await Promise.all([
+      fetch(BASE + '?' + p.toString()).then(r => r.json()),
+      sampleTilePixel(tileUrlStr, I, J)
+    ]);
+    fiData = fiResp;
+    rgba = pixelRgba;
+  } catch(e) {
+    document.getElementById('result-area').innerHTML = `<p class="placeholder" style="color:var(--red)">Error: ${e.message}</p>`;
+    return;
+  }
+
+  renderResult(fiData, rgba, meta, { lat: latlng.lat, lng: latlng.lng, time, z });
+  document.getElementById('fetch-ts-btn').disabled = false;
+}
+
+// ── Sample pixel RGBA from tile via canvas ────────────────────────────────────
+function sampleTilePixel(url, I, J) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = c.height = 256;
+      c.getContext('2d').drawImage(img, 0, 0);
+      try {
+        const px = c.getContext('2d').getImageData(J, I, 1, 1).data;
+        resolve({ r: px[0], g: px[1], b: px[2], a: px[3] });
+      } catch { resolve(null); }
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+// ── Render results ────────────────────────────────────────────────────────────
+function renderResult(fiData, rgba, meta, ctx) {
+  // Extract float value from GetFeatureInfo response
+  let floatVal = null, rawJson = JSON.stringify(fiData, null, 2);
+  try {
+    // Copernicus returns FeatureCollection or direct properties
+    const feat = fiData.features?.[0];
+    const props = feat?.properties ?? fiData.properties ?? fiData;
+    floatVal = props.value ?? props[Object.keys(props).find(k => typeof props[k] === 'number')] ?? null;
+  } catch {}
+
+  const valStr = floatVal !== null ? Number(floatVal).toFixed(4) : 'N/A';
+  const valClass = floatVal !== null ? 'float' : '';
+
+  let rgbaHtml = '';
+  if (rgba) {
+    const bg = `rgb(${rgba.r},${rgba.g},${rgba.b})`;
+    const bright = (rgba.r*299+rgba.g*587+rgba.b*114)/1000 > 128;
+    rgbaHtml = `
+      <div class="rgba-row">
+        <div class="rgba-chip" style="background:#${hex(rgba.r)}0000;color:#fff">R ${rgba.r}</div>
+        <div class="rgba-chip" style="background:#00${hex(rgba.g)}00;color:#fff">G ${rgba.g}</div>
+        <div class="rgba-chip" style="background:#0000${hex(rgba.b)};color:#fff">B ${rgba.b}</div>
+        <div class="rgba-chip" style="background:${bg};color:${bright?'#000':'#fff'}">A ${rgba.a}</div>
+      </div>`;
+  }
+
+  document.getElementById('result-area').innerHTML = `
+    <div class="val-box">
+      <div><span class="val-main ${valClass}">${valStr}</span><span class="val-unit">${meta.unit}</span></div>
+      <div class="val-label">${meta.label} · ${ctx.time.replace('T',' ').replace('.000Z',' UTC')}</div>
+      ${rgbaHtml}
+    </div>
+    <div class="val-box">
+      <div class="meta-grid">
+        <span class="mk">Lat / Lon</span><span class="mv">${ctx.lat.toFixed(4)}° / ${ctx.lng.toFixed(4)}°</span>
+        <span class="mk">Tile zoom</span><span class="mv">${ctx.z}</span>
+        <span class="mk">Tile pixel</span><span class="mv rgb">${rgba ? `RGB(${rgba.r},${rgba.g},${rgba.b}) — 0–255 int` : 'N/A'}</span>
+        <span class="mk">Actual value</span><span class="mv float">${valStr} ${meta.unit} — float</span>
+        <span class="mk">Data source</span><span class="mv">GetFeatureInfo JSON</span>
+      </div>
+    </div>
+    <details style="margin-top:6px">
+      <summary style="cursor:pointer;font-size:11px;color:var(--muted)">Raw GetFeatureInfo JSON</summary>
+      <pre style="font-size:10px;color:#94a3b8;margin-top:6px;overflow-x:auto;white-space:pre-wrap">${rawJson}</pre>
+    </details>`;
+}
+
+const hex = n => n.toString(16).padStart(2,'0');
+
+// ── Time series fetch ─────────────────────────────────────────────────────────
+async function fetchTimeSeries() {
+  if (!lastLatLng) return;
+  const layerId = document.getElementById('layer-sel').value;
+  const meta = LAYERS[layerId];
+  const baseTime = new Date(document.getElementById('time-input').value + ':00Z');
+  const zoom = Math.min(10, Math.floor(map.getZoom()));
+  const { z, row, col, I, J } = latLngToTileInfo(lastLatLng.lat, lastLatLng.lng, zoom);
+
+  document.getElementById('fetch-ts-btn').disabled = true;
+  document.getElementById('fetch-ts-btn').textContent = 'Fetching 24 hours…';
+
+  // Build 24 hourly requests (going back 23h + current)
+  const times = Array.from({length:24}, (_,i) => {
+    const t = new Date(baseTime); t.setUTCHours(baseTime.getUTCHours() - 23 + i);
+    return t.toISOString().replace('.000Z','.000Z');
+  });
+
+  const rows = await Promise.all(times.map(async time => {
+    const p = new URLSearchParams({
+      SERVICE:'WMTS', REQUEST:'GetFeatureInfo', VERSION:'1.0.0',
+      LAYER:`${DATASET}/${layerId}`,
+      STYLE: meta.style, FORMAT:'image/png',
+      INFOFORMAT:'application/json',
+      TILEMATRIXSET:'EPSG:3857', TILEMATRIX:`EPSG:3857:${z}`,
+      TILEROW:row, TILECOL:col, I, J,
+      TIME:time, ELEVATION,
+    });
+    try {
+      const d = await fetch(BASE+'?'+p.toString()).then(r=>r.json());
+      const feat = d.features?.[0];
+      const props = feat?.properties ?? d.properties ?? d;
+      const val = props.value ?? props[Object.keys(props).find(k=>typeof props[k]==='number')] ?? null;
+      return { time, val };
+    } catch { return { time, val: null }; }
+  }));
+
+  const existing = document.getElementById('result-area').innerHTML;
+  const tableRows = rows.map(r => {
+    const label = r.time.replace('T',' ').replace('.000Z',' UTC');
+    const val = r.val !== null ? `<td class="v">${Number(r.val).toFixed(4)}</td><td>${meta.unit}</td>` : `<td class="v" style="color:var(--muted)">—</td><td></td>`;
+    return `<tr><td>${label}</td>${val}</tr>`;
+  }).join('');
+
+  document.getElementById('result-area').innerHTML = existing + `
+    <div class="val-box" style="margin-top:8px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">24-hr time series · ${meta.label}</div>
+      <table class="ts-table">
+        <thead><tr><th>Time (UTC)</th><th>Value</th><th>Unit</th></tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>`;
+
+  document.getElementById('fetch-ts-btn').disabled = false;
+  document.getElementById('fetch-ts-btn').textContent = 'Fetch 24-hr time series at this point';
+}
+
+// ── Map events ────────────────────────────────────────────────────────────────
+map.on('mousemove', e => {
+  document.getElementById('coords-bar').textContent =
+    `${e.latlng.lat.toFixed(4)}°  ${e.latlng.lng.toFixed(4)}°`;
+});
+
+map.on('click', e => {
+  L.popup().setLatLng(e.latlng).setContent('Querying…').openOn(map);
+  queryPoint(e.latlng).then(() => map.closePopup());
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+switchLayer();
+</script>
+</body>
+</html>
