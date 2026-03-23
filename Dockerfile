@@ -7,8 +7,8 @@ FROM python:3.12-slim
 RUN pip install pygeoapi gunicorn
 
 # ── Data files ────────────────────────────────────────────────────────────────
-COPY cipa_sites.geojson      /data/cipa_sites.geojson
-COPY h3_stress_test.geojson  /data/h3_stress_test.geojson
+COPY data/cipa_sites.geojson      /data/cipa_sites.geojson
+COPY data/h3_stress_test.geojson  /data/h3_stress_test.geojson
 
 # ── pygeoapi config ───────────────────────────────────────────────────────────
 COPY pygeoapi-config.yml /config/pygeoapi-config.yml

@@ -4,7 +4,7 @@ Demonstrates how a small GeoJSON file is exposed as a live **OGC API Features** 
 
 **Stack:** Python · [pygeoapi](https://pygeoapi.io) · Docker · Google Cloud Run · MapLibre GL JS · GitHub Pages
 
-**Live service:** https://wfs-demo-176063489463.europe-west1.run.app
+**Live service:** https://wfs-demo-746476722093.europe-west1.run.app
 
 ---
 
@@ -112,14 +112,14 @@ After deploy, update `server.url` in `pygeoapi-config.yml` with your Cloud Run U
 
 ### QGIS (recommended)
 1. Layer → Add Layer → Add WFS Layer
-2. New connection → URL: `https://wfs-demo-176063489463.europe-west1.run.app`
+2. New connection → URL: `https://wfs-demo-746476722093.europe-west1.run.app`
 3. Set version/protocol to **OGC API - Features**
 4. Connect → both collections appear → Add to map
 
 ### Any OGC API Features client
 ```
-https://wfs-demo-176063489463.europe-west1.run.app/collections/cipa_sites/items
-https://wfs-demo-176063489463.europe-west1.run.app/collections/h3_stress_test/items
+https://wfs-demo-746476722093.europe-west1.run.app/collections/cipa_sites/items
+https://wfs-demo-746476722093.europe-west1.run.app/collections/h3_stress_test/items
 ```
 
 ---

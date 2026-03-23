@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WFS Local Demo</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; }
+    #header {
+      background: #1a1a2e; color: #fff; padding: 10px 16px;
+      display: flex; align-items: center; gap: 16px;
+    }
+    #header h1 { font-size: 1rem; }
+    #status {
+      margin-left: auto; padding: 4px 10px; border-radius: 4px;
+      font-size: 0.85rem; background: #444; color: #fff;
+    }
+    #status.ok  { background: #2d6a2d; }
+    #status.err { background: #8b1a1a; }
+    #status.loading { background: #555; }
+    #map { flex: 1; }
+    #sidebar {
+      position: absolute; top: 60px; left: 10px; z-index: 1000;
+      background: rgba(255,255,255,0.95); padding: 12px; border-radius: 6px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3); min-width: 220px; max-width: 300px;
+    }
+    #sidebar h2 { font-size: 0.9rem; margin-bottom: 8px; }
+    #sidebar button {
+      display: block; width: 100%; margin-bottom: 6px; padding: 7px;
+      background: #2563eb; color: #fff; border: none; border-radius: 4px;
+      cursor: pointer; font-size: 0.85rem;
+    }
+    #sidebar button:hover { background: #1d4ed8; }
+    #log { font-size: 0.78rem; color: #333; margin-top: 8px; line-height: 1.6; }
+    #log .err { color: #b91c1c; }
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <h1>WFS Demo — Cloud Run service check</h1>
+  <span id="status" class="loading">Checking…</span>
+</div>
+
+<div id="sidebar">
+  <h2>Layers</h2>
+  <button onclick="load('cipa_sites')">Load CIPA Sites (3 pts)</button>
+  <button onclick="clearMap()">Clear map</button>
+  <div id="log"></div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const BASE = 'https://wfs-demo-746476722093.europe-west1.run.app';
+
+const map = L.map('map').setView([20, -8], 4);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors', maxZoom: 19
+}).addTo(map);
+
+const layers = {};
+const logEl = document.getElementById('log');
+const statusEl = document.getElementById('status');
+
+function log(msg, isErr) {
+  const d = document.createElement('div');
+  d.textContent = msg;
+  if (isErr) d.className = 'err';
+  logEl.prepend(d);
+}
+
+// ── Check service health ──────────────────────────────────────────────────────
+async function checkHealth() {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const r = await fetch(BASE + '/collections', { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const n = data.collections ? data.collections.length : '?';
+    statusEl.textContent = `Cloud Run OK — ${n} collection(s)`;
+    statusEl.className = 'ok';
+    log(`Service reachable at ${BASE}. Collections: ${n}`);
+  } catch (e) {
+    clearTimeout(timer);
+    statusEl.textContent = 'Service unreachable';
+    statusEl.className = 'err';
+    log(`Cannot reach ${BASE}: ${e.message}`, true);
+  }
+}
+
+// ── Load a collection ─────────────────────────────────────────────────────────
+async function load(id) {
+  if (layers[id]) { map.removeLayer(layers[id]); delete layers[id]; }
+  log(`Fetching ${id}…`);
+  const t0 = Date.now();
+  try {
+    const r = await fetch(`${BASE}/collections/${id}/items?limit=50000`);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const geojson = await r.json();
+    const fetchMs = Date.now() - t0;
+    const n = geojson.features ? geojson.features.length : 0;
+
+    const layer = L.geoJSON(geojson, {
+      pointToLayer(f, latlng) {
+        return L.circleMarker(latlng, {
+          radius: 8, color: '#fff', weight: 2,
+          fillColor: '#4f8ef7', fillOpacity: 0.9
+        });
+      },
+      onEachFeature(f, lyr) {
+        const p = f.properties || {};
+        lyr.bindPopup(`<strong>${p.NAM || p.ID || id}</strong><br/>${p.TYP || ''}<br/>${p.STA_CON || ''}`);
+      }
+    }).addTo(map);
+
+    layers[id] = layer;
+    if (n > 0) map.fitBounds(layer.getBounds(), { padding: [40, 40] });
+    log(`${id}: ${n} features in ${fetchMs} ms`);
+  } catch (e) {
+    log(`Error loading ${id}: ${e.message}`, true);
+  }
+}
+
+function clearMap() {
+  Object.values(layers).forEach(l => map.removeLayer(l));
+  Object.keys(layers).forEach(k => delete layers[k]);
+  logEl.innerHTML = '';
+}
+
+checkHealth();
+</script>
+</body>
+</html>

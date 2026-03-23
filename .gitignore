@@ -1,6 +1,6 @@
-# Generated data files — too large for git, regenerate with generate_stress_test.py
-h3_stress_test.geojson
-cipa_sites.geojson
+# Generated data files at root — too large for git, regenerate with generate_stress_test.py
+/h3_stress_test.geojson
+/cipa_sites.geojson
 
 # Python
 __pycache__/

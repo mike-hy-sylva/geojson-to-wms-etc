@@ -5,7 +5,7 @@
 # then rebuild and redeploy the container.
 
 server:
-  url: https://wfs-demo-176063489463.europe-west1.run.app
+  url: https://wfs-demo-746476722093.europe-west1.run.app
   mimetype: application/json; charset=UTF-8
   encoding: utf-8
   language: en-US

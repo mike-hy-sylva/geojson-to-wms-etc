@@ -25,7 +25,7 @@ from flask_cors import CORS
 # ── Config ────────────────────────────────────────────────────────────────────
 BASE_URL = os.environ.get(
     "SERVICE_BASE_URL",
-    "https://wfs-demo-176063489463.europe-west1.run.app"
+    "https://wfs-demo-746476722093.europe-west1.run.app"
 )
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 

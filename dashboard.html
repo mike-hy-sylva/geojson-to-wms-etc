@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WFS Service Dashboard</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      --bg: #0f1117;
+      --panel: #1a1d27;
+      --border: #2a2d3a;
+      --text: #e2e4ed;
+      --muted: #7a7f94;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #eab308;
+      --blue: #3b82f6;
+      --accent: #6366f1;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; display: grid; grid-template-rows: 48px 1fr; height: 100vh; overflow: hidden; }
+
+    /* ── Header ── */
+    #header {
+      background: var(--panel); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px; padding: 0 16px;
+    }
+    #header h1 { font-size: 14px; font-weight: 600; letter-spacing: 0.02em; }
+    #header .url { font-size: 11px; color: var(--muted); font-family: monospace; background: var(--bg); padding: 3px 8px; border-radius: 4px; }
+    #overall-badge {
+      margin-left: auto; padding: 4px 12px; border-radius: 20px;
+      font-size: 11px; font-weight: 600; background: #1f2937; color: var(--muted);
+    }
+    #overall-badge.ok  { background: #14532d; color: var(--green); }
+    #overall-badge.err { background: #450a0a; color: var(--red); }
+    #overall-badge.partial { background: #422006; color: var(--yellow); }
+    #run-btn {
+      padding: 5px 14px; background: var(--accent); color: #fff;
+      border: none; border-radius: 6px; cursor: pointer; font-size: 12px;
+    }
+    #run-btn:hover { background: #4f46e5; }
+
+    /* ── Body layout ── */
+    #body { display: grid; grid-template-columns: 340px 1fr; overflow: hidden; }
+
+    /* ── Left panel ── */
+    #left { border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ── Endpoint tests ── */
+    #tests-panel { flex: 1; overflow-y: auto; padding: 12px; }
+    #tests-panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 10px; }
+    .test-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; border-radius: 6px; margin-bottom: 4px;
+      background: var(--panel); border: 1px solid var(--border);
+      cursor: pointer; transition: border-color 0.15s;
+    }
+    .test-row:hover { border-color: var(--accent); }
+    .test-row.selected { border-color: var(--accent); background: #1e1f2e; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--border); }
+    .dot.ok  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot.err { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+    .dot.loading { background: var(--yellow); animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .test-name { flex: 1; font-size: 12px; }
+    .test-ms { font-size: 11px; color: var(--muted); font-family: monospace; }
+    .test-tag { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: #1f2937; color: var(--muted); }
+    .test-tag.ogc { background: #1e3a5f; color: #60a5fa; }
+    .test-tag.wfs { background: #2d1b4e; color: #a78bfa; }
+
+    /* ── Response inspector ── */
+    #inspector {
+      border-top: 1px solid var(--border); padding: 12px;
+      height: 200px; display: flex; flex-direction: column; gap: 6px;
+    }
+    #inspector h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+    #inspector-url { font-size: 10px; color: var(--blue); font-family: monospace; word-break: break-all; }
+    #inspector-body {
+      flex: 1; overflow-y: auto; font-family: monospace; font-size: 11px;
+      color: #94a3b8; background: var(--bg); padding: 6px 8px; border-radius: 4px;
+      white-space: pre-wrap; word-break: break-all;
+    }
+
+    /* ── Map layer controls ── */
+    #map-controls {
+      position: absolute; top: 12px; left: 12px; z-index: 1000;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .layer-btn {
+      padding: 7px 14px; border: none; border-radius: 6px;
+      cursor: pointer; font-size: 12px; font-weight: 500;
+      background: rgba(26,29,39,0.92); color: var(--text);
+      border: 1px solid var(--border); backdrop-filter: blur(4px);
+    }
+    .layer-btn:hover { border-color: var(--accent); }
+    .layer-btn.active { border-color: var(--green); color: var(--green); }
+
+    /* ── Map ── */
+    #map-wrap { position: relative; }
+    #map { width: 100%; height: 100%; }
+    .leaflet-container { background: #1a1d27; }
+
+    /* ── Metrics bar ── */
+    #metrics {
+      position: absolute; bottom: 0; left: 0; right: 0; z-index: 1000;
+      background: rgba(15,17,23,0.88); backdrop-filter: blur(4px);
+      display: flex; gap: 0; border-top: 1px solid var(--border);
+    }
+    .metric { flex: 1; padding: 8px 14px; border-right: 1px solid var(--border); }
+    .metric:last-child { border-right: none; }
+    .metric-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    .metric-value { font-size: 16px; font-weight: 600; font-family: monospace; margin-top: 1px; }
+    .metric-value.ok { color: var(--green); }
+    .metric-value.warn { color: var(--yellow); }
+    .metric-value.err { color: var(--red); }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div id="header">
+  <h1>WFS Service Dashboard</h1>
+  <span class="url" id="base-url-display">http://localhost:5000</span>
+  <span id="overall-badge">—</span>
+  <button id="run-btn" onclick="runAllTests()">Run Tests</button>
+</div>
+
+<!-- Body -->
+<div id="body">
+
+  <!-- Left: tests + inspector -->
+  <div id="left">
+    <div id="tests-panel">
+      <h2>Endpoint Tests</h2>
+      <div id="test-list"></div>
+    </div>
+    <div id="inspector">
+      <h2>Response Inspector</h2>
+      <div id="inspector-url">Click a test to inspect its response</div>
+      <div id="inspector-body">—</div>
+    </div>
+  </div>
+
+  <!-- Right: map -->
+  <div id="map-wrap">
+    <div id="map-controls">
+      <button class="layer-btn" id="btn-cipa" onclick="toggleLayer('cipa_sites')">CIPA Sites</button>
+      <button class="layer-btn" onclick="clearAllLayers()">Clear</button>
+    </div>
+    <div id="map"></div>
+    <div id="metrics">
+      <div class="metric">
+        <div class="metric-label">Tests passing</div>
+        <div class="metric-value" id="m-pass">—</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Features loaded</div>
+        <div class="metric-value" id="m-features">—</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Last fetch</div>
+        <div class="metric-value" id="m-fetch">—</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Service</div>
+        <div class="metric-value" id="m-service">—</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const BASE = 'http://localhost:5000';
+document.getElementById('base-url-display').textContent = BASE;
+
+// ── Map setup ─────────────────────────────────────────────────────────────────
+const map = L.map('map', { zoomControl: false }).setView([20, -8], 4);
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© OpenStreetMap © Carto', maxZoom: 19
+}).addTo(map);
+
+const mapLayers = {};
+
+// ── Test definitions ──────────────────────────────────────────────────────────
+const TESTS = [
+  { id: 'landing',      label: 'Landing page',          tag: 'ogc',  url: '/',            check: r => r.title !== undefined },
+  { id: 'conformance',  label: 'Conformance',            tag: 'ogc',  url: '/conformance', check: r => Array.isArray(r.conformsTo) },
+  { id: 'collections',  label: 'Collections list',       tag: 'ogc',  url: '/collections', check: r => Array.isArray(r.collections) && r.collections.length > 0 },
+  { id: 'cipa_meta',    label: 'CIPA collection meta',   tag: 'ogc',  url: '/collections/cipa_sites', check: r => r.id === 'cipa_sites' },
+  { id: 'cipa_items',   label: 'CIPA items (GeoJSON)',   tag: 'ogc',  url: '/collections/cipa_sites/items', check: r => r.type === 'FeatureCollection' && r.features.length === 3 },
+  { id: 'wfs_caps',     label: 'WFS GetCapabilities',    tag: 'wfs',  url: '/?SERVICE=WFS&REQUEST=GetCapabilities', xml: true, check: t => t.includes('WFS_Capabilities') },
+  { id: 'wfs_feature',  label: 'WFS GetFeature',         tag: 'wfs',  url: '/?SERVICE=WFS&REQUEST=GetFeature&TYPENAMES=cipa_sites', check: r => r.type === 'FeatureCollection' },
+  { id: 'bbox_filter',  label: 'BBox filter',            tag: 'ogc',  url: '/collections/cipa_sites/items?bbox=-1,10,1,40', check: r => r.features.length >= 1 },
+  { id: 'limit',        label: 'Pagination limit',       tag: 'ogc',  url: '/collections/cipa_sites/items?limit=1', check: r => r.features.length === 1 },
+  { id: 'cors',         label: 'CORS (cross-origin fetch)', tag: 'ogc', url: '/collections', corsCheck: true },
+];
+
+const results = {};
+let selectedTest = null;
+
+// ── Render test rows ──────────────────────────────────────────────────────────
+function renderTests() {
+  const list = document.getElementById('test-list');
+  list.innerHTML = '';
+  TESTS.forEach(t => {
+    const r = results[t.id] || {};
+    const row = document.createElement('div');
+    row.className = 'test-row' + (selectedTest === t.id ? ' selected' : '');
+    row.onclick = () => inspect(t.id);
+    row.innerHTML = `
+      <div class="dot ${r.status || ''}"></div>
+      <span class="test-name">${t.label}</span>
+      <span class="test-ms">${r.ms != null ? r.ms + 'ms' : ''}</span>
+      <span class="test-tag ${t.tag}">${t.tag.toUpperCase()}</span>
+    `;
+    list.appendChild(row);
+  });
+  updateMetrics();
+}
+
+// ── Run all tests ─────────────────────────────────────────────────────────────
+async function runAllTests() {
+  document.getElementById('run-btn').disabled = true;
+  document.getElementById('overall-badge').className = '';
+  document.getElementById('overall-badge').textContent = 'Running…';
+  TESTS.forEach(t => { results[t.id] = { status: 'loading' }; });
+  renderTests();
+
+  await Promise.all(TESTS.map(runTest));
+
+  document.getElementById('run-btn').disabled = false;
+  const passing = Object.values(results).filter(r => r.status === 'ok').length;
+  const total = TESTS.length;
+  const badge = document.getElementById('overall-badge');
+  badge.textContent = `${passing} / ${total} passing`;
+  badge.className = passing === total ? 'ok' : passing > 0 ? 'partial' : 'err';
+  renderTests();
+}
+
+async function runTest(t) {
+  const t0 = Date.now();
+  try {
+    const resp = await fetch(BASE + t.url);
+    const ms = Date.now() - t0;
+    const headers = Object.fromEntries(resp.headers.entries());
+
+    if (t.corsCheck) {
+      // If we're cross-origin (served from HTTP, not file://) and the fetch
+      // succeeded and returned JSON, CORS is working — the browser would have
+      // blocked it otherwise. Reading the header itself is not reliably exposed.
+      let body, ok;
+      try {
+        const data = await resp.clone().json();
+        ok = Array.isArray(data.collections);
+        body = `Cross-origin fetch succeeded — CORS is enabled.\n\nOrigin sent: ${window.location.origin}\nTarget: ${BASE}\n\n` + JSON.stringify(headers, null, 2);
+      } catch {
+        ok = false;
+        body = 'Could not parse response.';
+      }
+      if (window.location.protocol === 'file:') {
+        ok = false;
+        body = 'FALSE NEGATIVE: dashboard opened as file:// — no Origin header sent.\nOpen via http://localhost:8080/dashboard.html to test CORS properly.';
+      }
+      results[t.id] = { status: ok ? 'ok' : 'err', ms, body, url: BASE + t.url };
+      return;
+    }
+
+    if (t.xml) {
+      const text = await resp.text();
+      results[t.id] = { status: t.check(text) ? 'ok' : 'err', ms, body: text.slice(0, 1200) + (text.length > 1200 ? '\n…' : ''), url: BASE + t.url };
+      return;
+    }
+
+    const data = await resp.json();
+    results[t.id] = { status: t.check(data) ? 'ok' : 'err', ms, body: JSON.stringify(data, null, 2).slice(0, 2000), url: BASE + t.url };
+  } catch (e) {
+    results[t.id] = { status: 'err', ms: Date.now() - t0, body: e.message, url: BASE + t.url };
+  }
+  renderTests();
+}
+
+// ── Inspector ─────────────────────────────────────────────────────────────────
+function inspect(id) {
+  selectedTest = id;
+  const r = results[id] || {};
+  document.getElementById('inspector-url').textContent = r.url || '—';
+  document.getElementById('inspector-body').textContent = r.body || '(no response yet — run tests first)';
+  renderTests();
+}
+
+// ── Map layer toggle ──────────────────────────────────────────────────────────
+async function toggleLayer(id) {
+  const btn = document.getElementById('btn-' + id.replace('_sites','').replace('_','-'));
+  if (mapLayers[id]) {
+    map.removeLayer(mapLayers[id]);
+    delete mapLayers[id];
+    if (btn) btn.classList.remove('active');
+    document.getElementById('m-features').textContent = '—';
+    document.getElementById('m-features').className = 'metric-value';
+    return;
+  }
+  if (btn) btn.textContent = 'Loading…';
+  const t0 = Date.now();
+  try {
+    const r = await fetch(`${BASE}/collections/${id}/items?limit=50000`);
+    const geojson = await r.json();
+    const ms = Date.now() - t0;
+    const n = geojson.features ? geojson.features.length : 0;
+
+    const layer = L.geoJSON(geojson, {
+      pointToLayer(f, latlng) {
+        return L.circleMarker(latlng, { radius: 9, color: '#fff', weight: 2, fillColor: '#6366f1', fillOpacity: 0.9 });
+      },
+      onEachFeature(f, lyr) {
+        const p = f.properties || {};
+        lyr.bindPopup(`<strong>${p.NAM || p.ID || id}</strong><br/><em>${p.TYP || ''}</em><br/>${p.STA_CON || ''}`);
+      }
+    }).addTo(map);
+
+    mapLayers[id] = layer;
+    if (n > 0) map.fitBounds(layer.getBounds(), { padding: [60, 60] });
+    if (btn) { btn.textContent = 'CIPA Sites'; btn.classList.add('active'); }
+
+    document.getElementById('m-features').textContent = n.toLocaleString();
+    document.getElementById('m-features').className = 'metric-value ok';
+    document.getElementById('m-fetch').textContent = ms + 'ms';
+    document.getElementById('m-fetch').className = 'metric-value ' + (ms < 500 ? 'ok' : ms < 2000 ? 'warn' : 'err');
+  } catch (e) {
+    if (btn) btn.textContent = 'CIPA Sites';
+    document.getElementById('m-features').textContent = 'Error';
+    document.getElementById('m-features').className = 'metric-value err';
+  }
+}
+
+function clearAllLayers() {
+  Object.values(mapLayers).forEach(l => map.removeLayer(l));
+  Object.keys(mapLayers).forEach(k => delete mapLayers[k]);
+  document.querySelectorAll('.layer-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('m-features').textContent = '—';
+  document.getElementById('m-fetch').textContent = '—';
+}
+
+// ── Metrics update ────────────────────────────────────────────────────────────
+function updateMetrics() {
+  const passing = Object.values(results).filter(r => r.status === 'ok').length;
+  const total = Object.values(results).filter(r => r.status).length;
+  if (total === 0) return;
+  const el = document.getElementById('m-pass');
+  el.textContent = `${passing}/${TESTS.length}`;
+  el.className = 'metric-value ' + (passing === TESTS.length ? 'ok' : passing > 0 ? 'warn' : 'err');
+
+  const svc = document.getElementById('m-service');
+  const any = Object.values(results).some(r => r.status === 'ok');
+  svc.textContent = any ? 'UP' : 'DOWN';
+  svc.className = 'metric-value ' + (any ? 'ok' : 'err');
+}
+
+// ── Auto-run on load ──────────────────────────────────────────────────────────
+renderTests();
+runAllTests();
+</script>
+</body>
+</html>

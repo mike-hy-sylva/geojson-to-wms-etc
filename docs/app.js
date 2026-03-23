@@ -11,7 +11,7 @@
 // ── Configuration ─────────────────────────────────────────────────────────────
 // Replace with your Cloud Run URL after deploying.
 // For local testing: 'http://localhost:5000'
-const PYGEOAPI_BASE_URL = 'https://wfs-demo-176063489463.europe-west1.run.app';
+const PYGEOAPI_BASE_URL = 'https://wfs-demo-746476722093.europe-west1.run.app';
 
 // Layer style definitions
 const LAYER_STYLES = {
